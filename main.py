@@ -1,4 +1,4 @@
-# Person-Tresspassing all the detection - it shows all the detected person in the roi if trespasser(s) is(are) there. - new rdx; 0.0.6 media-server; 2.0.0 person-detection
+# Pedestrian-Violation detection - registry.easemyai.com/easemyai/media_server:dp_world_pedestrian_violation-1.0.0
 from rdx import Connector, console_logger
 from shapely.geometry import Polygon, Point
 from typing import Any
