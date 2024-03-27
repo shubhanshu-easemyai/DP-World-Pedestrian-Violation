@@ -1,0 +1,12 @@
+confluent-kafka==2.3.0
+cryptography==36.0.2
+fastapi==0.63.0
+fastapi-mail==0.3.4.2
+fastapi-utils==0.2.1
+mongoengine==0.24.2
+shapely==1.7.1
+uvicorn==0.12.2
+numpy==1.24.4
+opencv-python==4.8.0.74
+apscheduler==3.10.1
+pillow==10.0.0
