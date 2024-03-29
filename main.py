@@ -10,6 +10,9 @@ import cv2
 import os
 import io
 import sys
+from apscheduler.schedulers.background import BackgroundScheduler
+from pytz import utc
+from functools import partial
 
 from models import *
 
@@ -44,7 +47,6 @@ loaded_camera_ids = {}
 object_class_name = "person"
 max_time_threshold_detection = 1 #default is set to 1
 report_time_threshold = 1 #default is set to 1
-report_generated = []
 sample_generator = {}
 
 # detected_object_list = []
@@ -563,11 +565,6 @@ class AppConfigurationSettingsHandler:
             logger.debug(e)
 
 
-from apscheduler.schedulers.background import BackgroundScheduler
-from pytz import utc
-from functools import partial
-test = []
-
 class DataProcessor:
     def __init__(self, connector: Connector, service_details: dict) -> None:
         self.object_tracker = {}
@@ -592,9 +589,7 @@ class DataProcessor:
         self.scheduler.add_job(partial(self.clear_cache, self.object_tracker), 'interval', minutes=5)
         self.scheduler.start()
 
-    # Now I want to call the clear_cache function to called with the help of APScheduler
     def clear_cache(self, sample_generator):
-        global test
         utc_now = datetime.datetime.utcnow()
         ten_minutes_ago = datetime.timedelta(minutes=5)
         
