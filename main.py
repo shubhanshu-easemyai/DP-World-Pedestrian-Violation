@@ -42,8 +42,10 @@ sources_list = []
 polygons = []
 loaded_camera_ids = {}
 object_class_name = "person"
-max_time_threshold = 0
+max_time_threshold_detection = 1 #default is set to 1
+report_time_threshold = 1 #default is set to 1
 report_generated = []
+sample_generator = {}
 
 # detected_object_list = []
 
@@ -69,7 +71,7 @@ def fetch_default_settings(width, height):
 
 
 def load_configuration_settings(source_id, source_name, **kwargs):
-    global sources_list, polygons, loaded_camera_ids, max_time_threshold
+    global sources_list, polygons, loaded_camera_ids, max_time_threshold_detection, report_time_threshold
     try:
         source_info = SourceInfo.objects(
             source_id=source_id, source_name=source_name
@@ -114,14 +116,16 @@ def load_configuration_settings(source_id, source_name, **kwargs):
                 polygons.append(Polygon(corners))
                 sources_list.append(
                     {
-                        "max_time_threshold": int(roi.get("max_time_threshold", 0)),
+                        "report_time_threshold": int(roi.get("report_time_threshold", 1)),
+                        "max_time_threshold_detection": int(roi.get("max_time_threshold_detection", 1)),
                         "source": settings.source_details,
                         "user": settings.user_details,
                         "roi": {"cords": roi["cords"], "roi_name": roi["roi_name"]},
                         "source_name": settings.source_details.source_name
                     }
                 )
-                max_time_threshold = int(roi.get("max_time_threshold", 0))
+                report_time_threshold = int(roi.get("report_time_threshold", 1))
+                max_time_threshold_detection = int(roi.get("max_time_threshold_detection", 1))
                 loaded_camera_ids[source_id]["indexes"].append(start_index)
                 start_index += 1
     except Exception as e:
@@ -559,11 +563,14 @@ class AppConfigurationSettingsHandler:
             logger.debug(e)
 
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from pytz import utc
+from functools import partial
+test = []
+
 class DataProcessor:
     def __init__(self, connector: Connector, service_details: dict) -> None:
         self.object_tracker = {}
-        self.checker = []
-        self.checkers_id = []
         self.connector = connector
 
         logger.debug(service_details)
@@ -579,73 +586,42 @@ class DataProcessor:
         if "SERVICE_MOUNTS" in service_details:
             self.image_storage_path = service_details["SERVICE_MOUNTS"]["output_media"]
 
-    # def checker_reporter(self, loaded_camera, all_detected_objects):
-    #     global report_receiver
-    #     logger.debug(report_receiver)
-    #     for tracked_detected_object in self.checker:
-    #         tracked_id = tracked_detected_object['object_id']
+        # self.scheduler = BackgroundScheduler()
+        # self.scheduler.add_job(self.clear_cache, 'interval', minutes=1)
+        self.scheduler = BackgroundScheduler(timezone=utc)
+        self.scheduler.add_job(partial(self.clear_cache, self.object_tracker), 'interval', minutes=5)
+        self.scheduler.start()
 
-    #         for detected_object in all_detected_objects: 
-    #             logger.debug(detected_object)
-    #             if detected_object['object_id'] == tracked_id and detected_object["name"] == object_class_name and detected_object["confidence"] >= 0.5:
-    #                 x1, x2 = detected_object["x1"], detected_object["x2"]
-    #                 y1, y4 = detected_object["y1"], detected_object["y4"]
-    #                 x_coordinate = (x1 + x2) // 2
-    #                 y_coordinate = (y1 + y4) // 2
-
-    #                 for _id in loaded_camera:
-    #                     if Point(x_coordinate, y_coordinate).within(polygons[_id]):
-    #                         report_receiver.append(copy.deepcopy(detected_object))
-                            
-    #             # else:
-    #             #     self.checker = [obj for obj in self.checker if obj['object_id'] != tracked_id]
-    #             #     # remove the entry of detected_object['object_id'] == tracked_id from self.checker
-
-              
-    # def checker_reporter(self, loaded_camera, all_detected_objects):
-    #     global report_generated
-    #     logger.debug(report_generated)
-    #     for tracked_detected_object in self.checker:
-    #         self.checkers_id.append()
-
-    #     for tracked_detected_object in self.checker:
-    #         tracked_id = tracked_detected_object['object_id']
-    #         updated = False
-    #         for detected_object in all_detected_objects:
-    #             logger.debug(detected_object)
-    #             if detected_object['object_id'] == tracked_id and detected_object["name"] == object_class_name and detected_object["confidence"] >= 0.5:
-    #                 x1, x2 = detected_object["x1"], detected_object["x2"]
-    #                 y1, y4 = detected_object["y1"], detected_object["y4"]
-    #                 x_coordinate = (x1 + x2) // 2
-    #                 y_coordinate = (y1 + y4) // 2
-
-    #                 for _id in loaded_camera:
-    #                     if Point(x_coordinate, y_coordinate).within(polygons[_id]):
-    #                         # Check if the object with the same ID already exists in report_receiver
-    #                         for entry in report_generated:
-    #                             if entry['object_id'] == tracked_id:
-    #                                 # Update the existing entry instead of adding a new one
-    #                                 entry.update(detected_object)
-    #                                 updated = True
-    #                                 break
-    #                         else:
-    #                             # If the object is not found, append it to report_receiver
-    #                             report_generated.append(copy.deepcopy(detected_object))
-    #                         break  # No need to check further polygons once updated
-    #         # If no update occurred, remove the entry from self.checker
-    #         if not updated:
-    #             self.checker.remove(tracked_detected_object)
-
+    # Now I want to call the clear_cache function to called with the help of APScheduler
+    def clear_cache(self, sample_generator):
+        global test
+        utc_now = datetime.datetime.utcnow()
+        ten_minutes_ago = datetime.timedelta(minutes=5)
+        
+        objects_to_remove = []
+        for object_id, object_data in sample_generator.items():
+            last_detected_time = object_data.get("last_detected")
+            created_time = object_data.get("created")
+            if last_detected_time is not None and (utc_now - last_detected_time) > ten_minutes_ago:
+                objects_to_remove.append(object_id)
+            elif last_detected_time is None and (utc_now - created_time) > ten_minutes_ago:
+                objects_to_remove.append(object_id)
+                # logger.debug(object_id)
+        
+        logger.debug(objects_to_remove)
+        # Remove objects from sample_generator
+        for object_id in objects_to_remove:
+            logger.debug(sample_generator)
+            del sample_generator[object_id]
+            logger.debug(self.object_tracker)
+        # objects_to_remove.clear()
 
     def process_data(self, data, **kwargs):
-        # logger.debug(self.checker)
         try:
-            logger.debug(self.checker)
+            utc_now = datetime.datetime.utcnow()
+            # logger.debug(utc_now)
             # logger.debug(data)
-            # logger.debug(self.checkers_id)
-            logger.debug(report_generated)
-            self.checkers_id.clear()
-            report_generated.clear()
+            # logger.debug(data["detections"])
             transaction_id = kwargs.pop("transaction_id")
             key = kwargs.pop("key")
             source_details = kwargs.pop("headers")
@@ -656,23 +632,9 @@ class DataProcessor:
                 load_configuration_settings(**source_details)
 
             loaded_camera = loaded_camera_ids[source_details["source_id"]]["indexes"]
-            # self.checker_reporter(loaded_camera=loaded_camera, all_detected_objects=copy.deepcopy(data["detections"]))
-
-            for tracked_detected_object in self.checker:
-                # logger.debug(tracked_detected_object)
-                object_id = tracked_detected_object['object_id']  # Retrieve object_i
-                # logger.debug(object_id)
-                self.checkers_id.append(object_id)
 
             for detected_object in copy.deepcopy(data["detections"]):
-                if detected_object["name"] == object_class_name and detected_object["confidence"] >= 0.5:
-                    
-                    # If only a specific object is required by dp world then we have to place 1 more if condition
-                    # saying detected_object id == the required id 
-                    if detected_object['object_id'] in self.checkers_id:
-                        report_generated.append(copy.deepcopy(detected_object))
-                        # logger.debug(detected_object['object_id'])
-
+                if detected_object["name"] == object_class_name and detected_object["confidence"] >= 0.8:
                     x1, x2 = detected_object["x1"], detected_object["x2"]
                     y1, y4 = detected_object["y1"], detected_object["y4"]
                     x_coordinate = (x1 + x2) // 2
@@ -680,7 +642,6 @@ class DataProcessor:
 
                     for _id in loaded_camera:
                         if Point(x_coordinate, y_coordinate).within(polygons[_id]):
-                            # logger.debug(detected_object)
 
                             object_id = "{}_{}_{}".format(
                                 source_details["source_id"],
@@ -690,16 +651,35 @@ class DataProcessor:
 
                             if object_id not in self.object_tracker:
                                 self.object_tracker[object_id] = {
-                                    "created": datetime.datetime.utcnow(),
+                                    "last_detected": None,
+                                    "created": utc_now,
                                     "alert": False,
+                                    "detected_object": copy.deepcopy(detected_object),
                                 }
-                            elif not self.object_tracker[object_id]["alert"]:
+                                
+                            if self.object_tracker[object_id]["alert"]:
+                                # if self.object_tracker[object_id]['last_detected']:
+                                # if self.object_tracker[object_id]['last_detected'] and utc_now - self.object_tracker[object_id]["last_detected"]:
+                                # logger.debug(utc_now - self.object_tracker[object_id]["last_detected"])
+                                if self.object_tracker[object_id]['last_detected'] and (utc_now - self.object_tracker[object_id]["last_detected"]) >= datetime.timedelta(seconds=report_time_threshold):
+                                    logger.debug(report_time_threshold)
+                                    # sample_generator.append(self.object_tracker[object_id])
+                                    sample_generator[object_id] = self.object_tracker[object_id]
+                                    self.object_tracker[object_id]["last_detected"] = utc_now
+                                    # logger.debug(sample_generator)
+                                # logger.debug(data["detections"])
+                                # logger.debug(detected_object)
+                                # logger.debug(self.object_tracker[object_id])
+                                    
+
+                            # logger.debug(detected_object)
+                            if not self.object_tracker[object_id]["alert"]:
                                 time_diff = (
-                                    datetime.datetime.utcnow() - self.object_tracker[object_id]["created"]
+                                    utc_now - self.object_tracker[object_id]["created"]
                                 ).seconds
-                                if time_diff >= max_time_threshold:
+                                if time_diff >= max_time_threshold_detection:
                                     self.object_tracker[object_id]["alert"] = True
-                                    self.checker.append(copy.deepcopy(detected_object))
+                                    self.object_tracker[object_id]["last_detected"] = utc_now
                                     # logger.debug(detected_object)
                                     post_process(
                                         connector=self.connector,
@@ -712,7 +692,7 @@ class DataProcessor:
                                         transaction_id=transaction_id,
                                         **data,
                                     )
-            self.checkers_id = [obj_id for obj_id in self.checkers_id if obj_id in [det_obj['object_id'] for det_obj in data["detections"]]]
+            # self.checkers_id = [obj_id for obj_id in self.checkers_id if obj_id in [det_obj['object_id'] for det_obj in data["detections"]]]
         except Exception as e:
             logger.error(
             "Error on line {}  EXCEPTION: {}".format(sys.exc_info()[-1].tb_lineno, e)
