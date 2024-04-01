@@ -590,15 +590,15 @@ class DataProcessor:
 
     def clear_cache(self, sample_generator):
         utc_now = datetime.datetime.utcnow()
-        ten_minutes_ago = datetime.timedelta(minutes=5)
+        five_minutes_ago = datetime.timedelta(minutes=5)
         
         objects_to_remove = []
         for object_id, object_data in sample_generator.items():
             last_detected_time = object_data.get("last_detected")
             created_time = object_data.get("created")
-            if last_detected_time is not None and (utc_now - last_detected_time) > ten_minutes_ago:
+            if last_detected_time is not None and (utc_now - last_detected_time) > five_minutes_ago:
                 objects_to_remove.append(object_id)
-            elif last_detected_time is None and (utc_now - created_time) > ten_minutes_ago:
+            elif last_detected_time is None and (utc_now - created_time) > five_minutes_ago:
                 objects_to_remove.append(object_id)
                 # logger.debug(object_id)
         
