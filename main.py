@@ -1,4 +1,4 @@
-# Pedestrian-Violation detection - registry.easemyai.com/easemyai/media_server:dp_world_pedestrian_violation-1.0.0from rdx import Connector, console_logger
+# Pedestrian-Violation detection - registry.easemyai.com/easemyai/media_server:pedestrian_violation-1.0.0 from rdx import Connector, console_logger
 from rdx import Connector, console_logger
 from shapely.geometry import Polygon, Point
 from typing import Any
@@ -79,7 +79,7 @@ def load_configuration_settings(source_id, source_name, **kwargs):
             source_id=source_id, source_name=source_name
         ).get()
         if source_id not in loaded_camera_ids:
-            loaded_camera_ids[source_id] = {"source_name": source_name, "indexes": []}
+            loaded_camera_ids[source_id] = {"source_name": source_name, "indexes": [], "extra":{}}
         else:
             removed_items = 0
             first_index = 0
@@ -123,16 +123,27 @@ def load_configuration_settings(source_id, source_name, **kwargs):
                         "source": settings.source_details,
                         "user": settings.user_details,
                         "roi": {"cords": roi["cords"], "roi_name": roi["roi_name"]},
-                        "source_name": settings.source_details.source_name
+                        "source_name": settings.source_details.source_name,
+                        "source_id": source_id
                     }
                 )
                 report_time_threshold = int(roi.get("report_time_threshold", 1))
                 max_time_threshold_detection = int(roi.get("max_time_threshold_detection", 1))
                 loaded_camera_ids[source_id]["indexes"].append(start_index)
+                loaded_camera_ids[source_id]["extra"][start_index] = {
+                    "report_time_threshold": int(roi.get("report_time_threshold", 1)),
+                    "max_time_threshold_detection": int(roi.get("max_time_threshold_detection", 1)),
+                    "source": settings.source_details,
+                    "user": settings.user_details,
+                    "roi": {"cords": roi["cords"], "roi_name": roi["roi_name"]},
+                    "source_name": settings.source_details.source_name,
+                    "source_id": source_id,
+                }
                 start_index += 1
     except Exception as e:
         logger.debug(e)
         sources_list = []
+
 
 
 def post_action(connector, index, alert_data, key, headers, transaction_id):
@@ -323,7 +334,10 @@ class AppSourceSettingsHandler:
     def unlink_source_settings(self, sources: dict, users: dict, **kwargs):
         try:
             for group_name, group_sources in sources.items():
+                logger.debug(group_name)
+                logger.debug(group_sources)
                 for source_details in group_sources:
+                    logger.debug(source_details)
                     source_info = SourceInfo.objects.get(
                         source_id=source_details["source_id"]
                     )
@@ -332,6 +346,8 @@ class AppSourceSettingsHandler:
                     usecase_parameters = UsecaseParameters.objects.get(
                         source_details=source_info, user_details=user_info
                     )
+
+                    logger.debug(usecase_parameters)
                     usecase_parameters.delete()
                     load_configuration_settings(**source_info.payload())
             return "success"
@@ -591,15 +607,15 @@ class DataProcessor:
 
     def clear_cache(self, sample_generator):
         utc_now = datetime.datetime.utcnow()
-        ten_minutes_ago = datetime.timedelta(minutes=5)
+        five_minutes_ago = datetime.timedelta(minutes=5)
         
         objects_to_remove = []
         for object_id, object_data in sample_generator.items():
             last_detected_time = object_data.get("last_detected")
             created_time = object_data.get("created")
-            if last_detected_time is not None and (utc_now - last_detected_time) > ten_minutes_ago:
+            if last_detected_time is not None and (utc_now - last_detected_time) > five_minutes_ago:
                 objects_to_remove.append(object_id)
-            elif last_detected_time is None and (utc_now - created_time) > ten_minutes_ago:
+            elif last_detected_time is None and (utc_now - created_time) > five_minutes_ago:
                 objects_to_remove.append(object_id)
                 # logger.debug(object_id)
         
@@ -635,7 +651,10 @@ class DataProcessor:
                     x_coordinate = (x1 + x2) // 2
                     y_coordinate = (y1 + y4) // 2
 
-                    for _id in loaded_camera:
+                    for _id in loaded_camera_ids[source_details["source_id"]]["indexes"]:
+                        report_time_threshold = loaded_camera_ids[source_details["source_id"]]["extra"][_id]["report_time_threshold"]
+                        max_time_threshold_detection = loaded_camera_ids[source_details["source_id"]]["extra"][_id]["max_time_threshold_detection"]
+
                         if Point(x_coordinate, y_coordinate).within(polygons[_id]):
 
                             object_id = "{}_{}_{}".format(
