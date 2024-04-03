@@ -130,7 +130,7 @@ def load_configuration_settings(source_id, source_name, **kwargs):
                 report_time_threshold = int(roi.get("report_time_threshold", 1))
                 max_time_threshold_detection = int(roi.get("max_time_threshold_detection", 1))
                 loaded_camera_ids[source_id]["indexes"].append(start_index)
-                loaded_camera_ids[source_id]["extra"][start_index] = {
+                loaded_camera_ids[source_id]["extra"] = {
                     "report_time_threshold": int(roi.get("report_time_threshold", 1)),
                     "max_time_threshold_detection": int(roi.get("max_time_threshold_detection", 1)),
                     "source": settings.source_details,
@@ -644,16 +644,20 @@ class DataProcessor:
 
             loaded_camera = loaded_camera_ids[source_details["source_id"]]["indexes"]
 
+            # logger.debug(loaded_camera_ids)
+            # logger.debug(loaded_camera_ids[source_details["source_id"]])
+            # logger.debug(loaded_camera_ids[source_details["source_id"]]["indexes"])
             for detected_object in copy.deepcopy(data["detections"]):
-                if detected_object["name"] == object_class_name and detected_object["confidence"] >= 0.8:
+                if detected_object["name"] == object_class_name and detected_object["confidence"] >= 0.5:
                     x1, x2 = detected_object["x1"], detected_object["x2"]
                     y1, y4 = detected_object["y1"], detected_object["y4"]
                     x_coordinate = (x1 + x2) // 2
                     y_coordinate = (y1 + y4) // 2
 
+ 
                     for _id in loaded_camera_ids[source_details["source_id"]]["indexes"]:
-                        report_time_threshold = loaded_camera_ids[source_details["source_id"]]["extra"][_id]["report_time_threshold"]
-                        max_time_threshold_detection = loaded_camera_ids[source_details["source_id"]]["extra"][_id]["max_time_threshold_detection"]
+                        report_time_threshold = loaded_camera_ids[source_details["source_id"]]["extra"]["report_time_threshold"]
+                        max_time_threshold_detection = loaded_camera_ids[source_details["source_id"]]["extra"]["max_time_threshold_detection"]
 
                         if Point(x_coordinate, y_coordinate).within(polygons[_id]):
 
@@ -677,6 +681,7 @@ class DataProcessor:
                                 # logger.debug(utc_now - self.object_tracker[object_id]["last_detected"])
                                 if self.object_tracker[object_id]['last_detected'] and (utc_now - self.object_tracker[object_id]["last_detected"]) >= datetime.timedelta(seconds=report_time_threshold):
                                     logger.debug(report_time_threshold)
+                                    logger.debug(max_time_threshold_detection)
                                     # sample_generator.append(self.object_tracker[object_id])
                                     sample_generator[object_id] = self.object_tracker[object_id]
                                     self.object_tracker[object_id]["last_detected"] = utc_now
